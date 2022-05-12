@@ -5,6 +5,9 @@ const Profile = require('../../models/Profile');
 const { default: mongoose } = require('mongoose');
 const { body, validationResult } = require('express-validator');
 const { findOneAndRemove } = require('../../models/User');
+const request = require('request');
+const config = require('config');
+const nodemon = require('nodemon');
 
 
 const router = express.Router();
@@ -212,6 +215,100 @@ router.delete('/experience/:exp_id', auth, async (req, res)=>{
 
         await profile.save();
         res.json(profile);
+    } catch (err) {
+        console.log(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// @route   PUT api/profile/education
+// @desc    add profile education
+// @access  private
+router.put('/education', 
+[
+    auth,
+    body('school', 'school is required.').not().isEmpty(), 
+    body('degree', 'degree is required.').not().isEmpty(),
+    body('fieldofStudy', 'field of Study date is required.').not().isEmpty(),
+    body('from', 'from date is required.').not().isEmpty(),
+], async (req, res)=>{
+    //Check for and return errors
+    const errors = validationResult(req);
+    if(!errors.isEmpty){
+        return res.send(400).json({errors: errors.array()});
+    };
+    //pull out data from req
+    const {
+        school,
+        degree,
+        fieldofStudy,
+        from,
+        to,
+        current,
+        description
+    } = req.body;
+    //build json object for experience
+    const newEdu = {
+        school,
+        degree,
+        fieldofStudy,
+        from,
+        to,
+        current,
+        description
+    }
+    //Push/unshift to db
+    try {
+        const profile = await Profile.findOne({user: req.user.id});
+        if(!profile){
+            return res.json({msg: 'No profile found.'});
+        }
+        profile.education.unshift(newEdu);
+        await profile.save();
+        res.json(profile)
+    } catch (err) {
+        console.log(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+// @route   DELETE api/profile/education/:edu_id
+// @desc    Delete an Education
+// @access  private
+
+router.delete('/education/:edu_id', auth, async (req, res)=>{
+    try {
+        const profile = await Profile.findOne({user: req.user.id});
+        //get index to delete
+        const deleteIndex = profile.education.map(item => item.id).indexOf(req.params.edu_id);
+        // remove exp using index
+        profile.education.splice(deleteIndex, 1);
+
+        await profile.save();
+        res.json(profile);
+    } catch (err) {
+        console.log(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// @route   GET api/profile/github/:username
+// @desc    Get users github repos
+// @access  public
+router.get('/github/:username', async (req, res) => {
+    try {
+        const options = {
+            uri: `https://api.github.com/users/${req.params.username}/repos?per_page=5&sort=created:asc&client_id=${config.get('githubClientId')}&client_secret${config.get('githubSecret')}`,
+            method: 'GET',
+            headers: {'user-agent': 'node.js'} 
+        }
+        request(options, (error, response, body )=>{
+            if(error) console.log(error);
+            if(response.statusCode !== 200){
+                return res.status(404).json({msg: 'No github profile found'});
+            }
+            //else return repos
+            res.json(JSON.parse(body));
+        });
     } catch (err) {
         console.log(err.message);
         res.status(500).send('Server Error');
